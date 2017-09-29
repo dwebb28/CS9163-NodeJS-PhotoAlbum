@@ -1,0 +1,15 @@
+{
+  "name": "webapp",
+  "version": "1.0.0",
+  "description": "Application Security Fall 2017 - Assignment 1 - Image Web App",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "author": "Daniel Webb (dtw276)",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.15.4",
+    "express-fileupload": "^0.2.0"
+  }
+}

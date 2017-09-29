@@ -1,0 +1,15 @@
+<h1>Welcome home!</h1>
+<a href='/pictures/0'>View All Photos</a>
+<a href='/home/editPictures'>Edit Pictures</a>
+<a href='/upload'>Upload Pictures</a>
+<br>
+<h2>My Pictures</h2>
+<table class="image">
+	<% pictures.forEach(function(picture) { %>
+		<tr><td><img src='<%= picture.file_path %>' height=200 width=300/></td></tr>
+		<tr><td class="caption"><%= picture.comment %></td></tr>
+    <% }); %>
+</ul>
+<p>
+<a href='/logout'>Logout</a>
+</p>

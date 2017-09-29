@@ -1,0 +1,22 @@
+<html lang="en">
+<body>
+<a href='/home'>Home</a>
+<h2> Enjoy your pictures </h2>
+<table class="image">
+	<% pictures.forEach(function(picture) { %>
+		<tr><td><img src='<%= picture.file_path %>' height=200 width=300/></td></tr>
+		<tr><td><a href="/deletePicture/<%= picture.id %>">Delete Picture</a></td></tr>
+		<tr><td><form ref='uploadForm' 
+					id='uploadForm' 
+					action='http://localhost:3000/editPicture/<%= picture.id %>' 
+					method='post' 
+					encType="multipart/form-data">					
+					<input type="text" name="comment" value='<%= picture.comment %>'/>
+					<input type='submit' value='Save Changes.' />
+    </form></td></tr>
+    <% }); %>
+</ul>
+</body>
+
+
+</html>
