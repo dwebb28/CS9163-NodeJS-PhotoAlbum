@@ -1,1 +1,4 @@
 node_modules/*
+webapp/public/images/*.jpg
+webapp/public/images/*.png
+webapp/public/images/*.gif
