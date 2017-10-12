@@ -60,8 +60,40 @@ function compareHash(password, hash, callback){
 				});
 }
 
+//gets username for a valid sessionId, otherwise returns undefined
+function lookupSession(sessionId , callback){
+	var sessionCheck = 'SELECT username FROM photoapp.user_session where exp_date_time >= ' 
+				+ conn.escape(new Date()) + ' and session_id = ' + sessionId;
+				console.log(sessionCheck);
+	
+	queryDatabase(sessionCheck, function(results){
+				
+		if(results)
+		{
+			
+			if(results.length != 1)
+			{
+				callback(undefined);
+			}
+			else
+			{
+				var username = results[0].username;
+				callback(username);
+			}
+		}
+		else
+		{
+			//remove cookie, and redirect to login page
+			callback(undefined);
+		}
+				
+	});
+	
+}
+
 //used to parse the cookie
 function parseCookie(req, callback){
+	
 	console.log(req.headers.cookie);
 	
 	if(req.headers.cookie === undefined)
@@ -70,7 +102,21 @@ function parseCookie(req, callback){
 	} else{
 		var cook = cookie.parse(req.headers.cookie);
 		console.log(cook);
-		callback(cook);
+		
+		//check if session exists and valid
+		if(cook.sessionid === undefined)
+		{
+			callback(undefined);
+		} else{
+			//check the session and reject if not valid
+			lookupSession(cook.sessionid, function(username)
+			{
+				if(!username)
+					callback(undefined);
+				else
+					callback(username);
+			});						
+		}
 	}
 }
 
@@ -80,14 +126,12 @@ function parseCookie(req, callback){
 app.post('/upload', function(req, res){
 	
 	var username;
-	parseCookie(req, function(cook){
-		if(!cook)
+	parseCookie(req, function(username){
+		if(!username)
 		{
-			res.redirect('/login');
+			logoutUser(res);
 		}
 		else{
-			username = cook.username;
-			
 			//check to make sure files were uploaded
 			if(!req.files || Object.keys(req.files) == 0)
 			{
@@ -98,7 +142,8 @@ app.post('/upload', function(req, res){
 				var picName = fileToUpload.name;
 				
 				//make sure that the file being uploaded is actuallly a valid file type supported
-				if( !(picName.toLowerCase().endsWith('.jpg')) && !(picName.toLowerCase().endsWith('.png')) && !(picName.toLowerCase().endsWith('.gif') ))
+				if( !(picName.toLowerCase().endsWith('.jpg')) && !(picName.toLowerCase().endsWith('.png')) 
+					&& !(picName.toLowerCase().endsWith('.gif') ))
 				{
 					res.status(400).send('Invalid file type');
 				}
@@ -115,7 +160,8 @@ app.post('/upload', function(req, res){
 						else
 						{
 							var sql = 'INSERT INTO photoapp.photos(username,file_path,comment,insert_date_time,update_date_time) values('
-									+ conn.escape(username) + ',' + conn.escape(filepath) + ',' + conn.escape(comment) + ',' + conn.escape(new Date()) + ',' + conn.escape(new Date()) + ')';
+									+ conn.escape(username) + ',' + conn.escape(filepath) + ',' + conn.escape(comment) + ',' 
+									+ conn.escape(new Date()) + ',' + conn.escape(new Date()) + ')';
 						
 							console.log(sql);
 							
@@ -139,10 +185,10 @@ app.post('/upload', function(req, res){
 //get the upload page
 app.get('/upload', function(req, res){
 	//parse cookie
-	parseCookie(req, function(cook){
-		if(!cook)
+	parseCookie(req, function(username){
+		if(!username)
 			//if cookie not valid
-			res.redirect('/login');
+			logoutUser(res);
 		else
 			res.sendFile(path.join(__dirname, '/web/' , 'upload.html'));
 	});
@@ -152,15 +198,13 @@ app.get('/upload', function(req, res){
 //get the home page for that user logged in
 app.get('/home', function(req, res){
 	
-	var username;
-	parseCookie(req, function(cook){
+	parseCookie(req, function(username){
 		
-		if(!cook){
+		if(!username){
 			//if cookie is invalid
-			res.redirect('/login');
+			logoutUser(res);
 		}
 		else{
-			username = cook.username;
 			var start = parseInt(req.params.start, 10);
 			var limit = 200;
 			var pictures = [];
@@ -199,14 +243,13 @@ app.get('/home', function(req, res){
 app.get('/home/editPictures', function(req, res){
 	
 	var username;
-	parseCookie(req, function(cook){
+	parseCookie(req, function(username){
 		
-		if(!cook){
-			res.redirect('/login');
+		if(!username){
+			logoutUser(res);
 		} else
 		{
 			//get the username from the cookie
-			username = cook.username;
 			var start = parseInt(req.params.start, 10);
 			var limit = 200;
 			var pictures = [];
@@ -250,11 +293,41 @@ app.get('/login', function(req,res){
 	res.sendFile(path.join(__dirname, '/web', 'login.html'));
 });
 
+function logoutUser(res){
+	res.clearCookie('sessionid');
+	res.redirect('/login');
+}
+
+
 //log the user out- clear their cookie, and redirect back to the login page
 app.get('/logout', function(req,res){
-	res.clearCookie('username');
-	res.redirect('/login');
+	logoutUser(res);
 });
+
+function registerSession(username, callback)
+{
+	//change this to a randomly generated number
+	var sessionId = 484848;
+	var time = new Date().getTime();
+	time += (60*60*1000);
+	var expTime = new Date(time);
+	var sessionInsertion = 'INSERT INTO photoapp.user_session(username, session_id, exp_date_time)' 
+		+ 'VALUES(' + conn.escape(username) + ',' + sessionId + ',' 
+		+ conn.escape(expTime) + ')';
+		
+	console.log(sessionInsertion);
+	
+	queryDatabase(sessionInsertion,  function(results)
+	{
+			if(results){
+				callback(sessionId);
+			}
+			else
+			{
+				callback(undefined);
+			}
+	});
+}
 
 //log the user in
 app.post('/login', function(req,res){
@@ -278,12 +351,19 @@ app.post('/login', function(req,res){
 					//if the password hashes match, set the cookie
 					//redirect to the home page
 					if(success){
-						res.setHeader('Set-Cookie', cookie.serialize('username', username, {
-							httpOnly: true,
-							maxAge: 60 * 60 * 24 * 7 // 1 week 
-						}));
-						res.statusCode = 301;
-						res.redirect(req.headers.origin + '/home');
+						
+						registerSession(username,  function(sessionId)
+						{
+							if(sessionId){
+								res.setHeader('Set-Cookie', cookie.serialize('sessionid',sessionId, {
+									httpOnly: true,
+									maxAge: 60 * 60 * 24 * 7 // 1 week 
+								}));
+								res.statusCode = 301;
+								res.redirect(req.headers.origin + '/home');
+							}
+							//if bad results will fall through to Authentication error message below.
+						});
 					}	
 					else{
 						res.send('Authentication error.');
@@ -328,13 +408,21 @@ app.post('/register',function(req,res){
 				queryDatabase(insert, function(insert_results){
 					//if successfully saved, set the user's cookie on their browser
 					if(insert_results){
-						res.setHeader('Set-Cookie', cookie.serialize('username', username, {
-							user: username,
-							httpOnly: true,
-							maxAge: 60 * 60 * 24 * 7 // 1 week 
-						}));
-						res.statusCode = 301;
-						res.redirect(req.headers.origin + '/home');
+						
+						registerSession(username,  function(sessionId)
+						{
+							if(sessionId){
+								res.setHeader('Set-Cookie', cookie.serialize('sessionid',sessionId, {
+									httpOnly: true,
+									maxAge: 60 * 60 * 24 * 7 // 1 week 
+								}));
+								res.statusCode = 301;
+								res.redirect(req.headers.origin + '/home');
+							}
+							//if bad results will fall through to Authentication error message below.
+						});
+					} else {
+						res.send('Registration Error.');
 					}
 				});
 				
@@ -355,7 +443,9 @@ function deletePicture( pictureId, username, callback){
 
 //edit the comment of the picture
 function editPicture( pictureId, comment, username, callback){
-	var sql = 'UPDATE photoapp.photos SET comment = ' + conn.escape(comment) + ', update_date_time = ' + conn.escape(new Date()) + ' WHERE username = ' + conn.escape(username) + ' AND id = ' + conn.escape(pictureId);
+	var sql = 'UPDATE photoapp.photos SET comment = ' + conn.escape(comment) + ', update_date_time = ' 
+		+ conn.escape(new Date()) + ' WHERE username = ' + conn.escape(username) + ' AND id = ' + conn.escape(pictureId);
+		
 	console.log('sql: ' + sql);
 	queryDatabase(sql, function(results){
 		console.log(results);
