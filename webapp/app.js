@@ -3,6 +3,8 @@
 const express = require('express');
 const fileUpload = require('express-fileupload');
 const app = express();
+var cookieParser = require('cookie-parser');
+var csrf = require('csurf');
 const bodyParser = require('body-parser');
 var path = require('path');
 var bcrypt = require('bcrypt');
@@ -10,6 +12,14 @@ const saltRounds = 10;
 var fs = require('fs');
 var mysql = require('mysql');
 var cookie = require('cookie');
+const uuid = require('node-uuid');
+var config = require('./config.js');
+var db = config.db;
+
+var csrfProtection = csrf({cookie: true});
+
+app.use(cookieParser());
+
 console.log(__dirname);
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
@@ -18,9 +28,9 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 //establish the database connection details
 var conn = mysql.createConnection({
-	host: "localhost",
-	user: "sql_admin",
-	password: "appsec"
+	host: db.host,
+	user: db.username,
+	password: db.password
 });
 
 //connect to the database
@@ -63,7 +73,7 @@ function compareHash(password, hash, callback){
 //gets username for a valid sessionId, otherwise returns undefined
 function lookupSession(sessionId , callback){
 	var sessionCheck = 'SELECT username FROM photoapp.user_session where exp_date_time >= ' 
-				+ conn.escape(new Date()) + ' and session_id = ' + sessionId;
+				+ conn.escape(new Date()) + ' and session_id = \'' + sessionId + '\'';
 				console.log(sessionCheck);
 	
 	queryDatabase(sessionCheck, function(results){
@@ -123,7 +133,7 @@ function parseCookie(req, callback){
 //used to physically upload the pictures onto the server
 //does some error checking
 //saves the picture's path and comments into the database
-app.post('/upload', function(req, res){
+app.post('/upload', csrfProtection ,function(req, res){
 	
 	var username;
 	parseCookie(req, function(username){
@@ -183,14 +193,20 @@ app.post('/upload', function(req, res){
 });
 
 //get the upload page
-app.get('/upload', function(req, res){
+app.get('/upload', csrfProtection, function(req, res){
 	//parse cookie
 	parseCookie(req, function(username){
-		if(!username)
+		if(!username){
 			//if cookie not valid
 			logoutUser(res);
+		}
 		else
-			res.sendFile(path.join(__dirname, '/web/' , 'upload.html'));
+		{
+			//res.sendFile(path.join(__dirname, '/web/' , 'upload.html'));
+			res.render('pages/upload',{
+				csrf: req.csrfToken()
+			});
+		}
 	});
 	
 });
@@ -240,7 +256,7 @@ app.get('/home', function(req, res){
 });
 
 //Once logged in a user can create edit their own pictures
-app.get('/home/editPictures', function(req, res){
+app.get('/home/editPictures', csrfProtection, function(req, res){
 	
 	var username;
 	parseCookie(req, function(username){
@@ -277,7 +293,8 @@ app.get('/home/editPictures', function(req, res){
 				}
 				console.log(pictures);
 				res.render('pages/edit',{
-				pictures: pictures
+				pictures: pictures,
+				csrf: req.csrfToken()
 			});				
 			});
 		}
@@ -307,12 +324,12 @@ app.get('/logout', function(req,res){
 function registerSession(username, callback)
 {
 	//change this to a randomly generated number
-	var sessionId = 484848;
+	var sessionId = uuid.v4();
 	var time = new Date().getTime();
 	time += (60*60*1000);
 	var expTime = new Date(time);
 	var sessionInsertion = 'INSERT INTO photoapp.user_session(username, session_id, exp_date_time)' 
-		+ 'VALUES(' + conn.escape(username) + ',' + sessionId + ',' 
+		+ 'VALUES(' + conn.escape(username) + ',\'' + sessionId + '\',' 
 		+ conn.escape(expTime) + ')';
 		
 	console.log(sessionInsertion);
@@ -521,17 +538,16 @@ app.get('/pictures/:start', function(req, res){
 });
 
 //delete picture by id
-app.get('/deletePicture/:pictureId', function(req, res){
+app.post('/deletePicture/:pictureId', csrfProtection, function(req, res){
 	
 	var pictureId = parseInt(req.params.pictureId);
 	var username;
-	parseCookie(req, function(cook){
+	parseCookie(req, function(username){
 		//authenticate user
-		if(!cook){
-			res.redirect('/login');
+		if(!username){
+			logoutUser(res);
 		}
 		else{
-			username = cook.username;
 			deletePicture( pictureId, username ,function(results){
 				if(results){
 					res.redirect('/home');
@@ -542,20 +558,19 @@ app.get('/deletePicture/:pictureId', function(req, res){
 });
 
 //edit picture by the picture id
-app.post('/editPicture/:pictureId', function(req, res){
+app.post('/editPicture/:pictureId', csrfProtection, function(req, res){
 	
 	var pictureId = parseInt(req.params.pictureId);
 	var comment = req.body.comment;
 	var username;
-	parseCookie(req, function(cook){
+	parseCookie(req, function(username){
 		
 		//authenticate user
-		if(!cook){
-			res.redirect('/login');
+		if(!username){
+			logoutUser(res);
 		}		
 		else
 		{
-			username = cook.username
 			editPicture( pictureId, comment , username ,function(results){
 			if(results){
 				res.redirect('/home');

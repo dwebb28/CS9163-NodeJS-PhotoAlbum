@@ -12,11 +12,14 @@
     "bcrypt": "^1.0.3",
     "body-parser": "^1.18.2",
     "cookie": "^0.3.1",
+    "cookie-parser": "^1.4.3",
+    "csurf": "^1.9.0",
     "ejs": "^2.5.7",
     "express": "^4.15.4",
     "express-fileupload": "^0.2.0",
     "fs": "0.0.1-security",
     "mysql": "^2.14.1",
+    "node-uuid": "^1.4.8",
     "path": "^0.12.7"
   }
 }
